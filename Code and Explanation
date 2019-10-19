@@ -1,0 +1,296 @@
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////// HOW TO USE THE TOOL + BACKGROUND ///////// ////////////////////////////////
+// TO USE - press run, un-check the geometry import 'roi' on the map - To get a more detailed view, //
+// zoom in on the map  and turn on and off the layers to show before and after dam construction water cover// 
+// BACKGROUND - The map shows three classes of water cover; 1 = 'no water', //
+// 2 = 'seasonal water', 3 = 'permanent water'. The data comes from the Landsat JRC Yearly Water  // 
+// Classification History V1.0 (1984-2015) dataset. The data was filtered to before (1987), and //
+// after (2000) the dam was constructed. The outputs are two GeoTIFF visualisatons, and a list of //
+// water cover areas by class (these are visualised in a table, a pie chart, and a column chart). //
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////// PREPARING THE DATA FOR ANALYSIS /////////////////////////////////////////
+// AIM - Create a layers showing water cover types before the Alta Dam's Construction ////////////////
+// METHOD - 1) Center the map, 2) Create a polygon around the study region/river ('roi'), 3) Add the //
+// data to the console, 4) Temporal filter to 1985, 5) Reduce the image collection to the mean of the// 
+// temporal filter, 6) Clip to the 'roi', 7) Style the palette for the labels/water cover types ////// 
+// 8) Add the layer to the map with the predefined palette ////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// 1) Center the Map 
+Map.setCenter(23.8129, 69.6924, 9) ; 
+
+// 2) Create a polygon around the study region/river ('roi') 
+// (see imports at the top of the console)
+
+// 3) Add the data to the console 
+var imageCollection = ee.ImageCollection("JRC/GSW1_0/YearlyHistory");
+
+// 4) Temporal Filter for before the dam's construction (1985)
+var temporalFilteredbefore = imageCollection.filterDate('1985-01-01', '1986-01-01'); 
+
+// 5) Reducing the image collection to the mean of the temporal filter
+var mean = temporalFilteredbefore.reduce(ee.Reducer.mean());
+
+// 6) Clipping the data to the river boundary ('roi')
+var altariverbefore = mean.clip(roi);  
+
+// 7) Style the palette for the labels/water cover types
+var igbpPalette = [
+  '85FF75', //Not water = light green = 1
+  '#ec2f4b', //Seasonal Water = red = 2
+  '2822E5',  //Permanent Water = dark blue = 3
+]; 
+// 8) Adding the layer with the predifined palette
+Map.addLayer(altariverbefore,
+              {min:1, max: 3, palette: igbpPalette}, 
+              'Before'); 
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////// Post-Dam Construction Ground Water Map /////////////////////////
+// Repeat steps 4 - 6, and 8, temporally filtering to the year 2000  ///////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// 4) Temporal Filter for after the dam's construction (2000) 
+var temporalFilteredafter = imageCollection.filterDate('2000-01-01', '2001-01-01'); 
+
+// 5) Reducing the image collection to the mean of the temporal filter 
+var mean2 = temporalFilteredafter.reduce(ee.Reducer.mean());
+
+// 6) Clipping the filtered data to the river boundary ('roi')
+var AltaRiverAfter = mean2.clip(roi);
+
+// 8) Adding the layer with the predifined palette
+Map.addLayer(AltaRiverAfter,
+              {min:1, max: 3, palette: igbpPalette}, 
+              'After'); 
+
+
+///////////////////////////// VISUALISING WATER COVER CHANGE //////////////////////////////////
+// AIM - To visualise change in the area of each water cover class //////// //////////////////
+// METHOD - Create two GeoTIFF images visualising water cover change for before and after ////
+// dam construction //////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// Create a GeoTIFF Image of before dam construction - (to access it, go to the tasks tab and follow the instructions)
+Export.image.toDrive({
+  image: altariverbefore ,
+  description: 'imageToDrive1',
+  scale: 30,
+  region: roi,
+});
+
+// Create a GeoTIFF Image of before dam construction - (to access it, go to the tasks tab and follow the instructions)
+Export.image.toDrive({
+  image: AltaRiverAfter ,
+  description: 'imageToDriveafter',
+  scale: 30,
+  region: roi,
+});
+
+
+/////////////////////////////////////// STUDY REGION MATHS ////////////////////////////////////
+//// AIM: Calculate the difference between the area covered by different water classes ////////
+//// METHOD : 1) Create a histogram showing the pixel frequency of each water class in the 'roi'  /// 
+// before dam construction, 2) Create a histogram showing the pixel frequency of each water class//
+// in the 'roi' after the dam's construction, 3) Using the pixel frequency values,  calculate the //
+//  area covered by each water class in m^2 before the dam's construction, 4) Using the pixel  //
+// frequency values, calculate the area covered by each water class in m^2 after the dam's construction //
+// 5) Calculate the total area covered by all water before the dam's construction, 6) Calculate the // 
+// total area covered by all water after the dam's construction, 7) Calculate the change in area (m^2)  //
+// covered by each water class before and after dam construction /////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// 1) Creating a histogram showing the pixel frequency of each water class in the 'roi' before dam construction,
+// where class 0 = 'no data', class 1 = 'no water', class 2 - 'seasonal water', and class 3 = 'permanent water'
+
+var histogrambefore = ui.Chart.image.histogram({
+  image: altariverbefore,
+  region: roi,
+  scale: 30,
+  minBucketWidth: 1,
+});
+histogrambefore.setOptions({
+  title: 'Histogram of pixel frequency of each water class before the dam construction (1985)'
+});
+print(histogrambefore); 
+
+// 2) Creating a histogram showing the pixel frequency of each water class in the 'roi' after dam construction
+// where class 0 = 'no data', class 1 = 'no water', class 2 - 'seasonal water', and class 3 = 'permanent water'
+
+var histogramafter = ui.Chart.image.histogram({
+  image: AltaRiverAfter,
+  region: roi,
+  scale: 30,
+  minBucketWidth: 1
+});
+histogramafter.setOptions({
+  title: 'Histogram of pixel frequency of each water class after the dam construction (2000).'
+});
+print(histogramafter);
+
+
+// 3) Using the pixel frequency values, calculate the area covered by each water class in m^2 before the dam's construction
+// (The Landsat TM/ETM+/OLI sensors which collected the data have a spatial resolution of 30m,  using the pixel
+// frequency values where area in m^2 = pixel frequency value of class*900 , (where 900=30*30). 
+var nodataareabefore = (18*900); 
+print ('"No data" cover area (m^2) before dam construction', nodataareabefore); 
+var notwaterareabefore = (4350*900); 
+print ('"No water" cover area (m^2) before dam construction', notwaterareabefore); 
+var seasonalwaterareabefore = (6360.07*900); 
+print ('"Seasonal water" cover area (m^2) before dam construction', seasonalwaterareabefore ); 
+var permanentwaterareabefore = (23182.37*900); 
+print ('"Permanent water" cover area (m^2) before dam construction', permanentwaterareabefore); 
+
+
+// 4) Using the pixel frequency values, calculate the area covered by each water class in m^2 after the dam's construction
+// (The Landsat TM/ETM+/OLI sensors which collected the data have a spatial resolution of 30m, using the pixel
+// frequency values whee area in m^2 = pixel frequency value of class * 900 , (where 900=30*30). 
+var notdataareaafter = (10*900); 
+print ('"No data" cover area (m^2) after dam construction', notdataareaafter); 
+var notwaterareaafter = (872*900);
+print ('"No water" cover area (m^2) after dam construction', notwaterareaafter); 
+var seasonalwaterareaafter = (2738.37*900); 
+print ('"Seasonal water" cover area (m^2) after dam construction', seasonalwaterareaafter); 
+var permanentwaterareaafter = (30285.38*900); 
+print ('"Permanent water" cover area (m^2) after dam construction', permanentwaterareaafter); 
+
+
+//5) Calculating the total area covered by all water before the dam's construction
+var totalwatercoverareabefore = (nodataareabefore + notwaterareabefore + seasonalwaterareabefore + permanentwaterareabefore); 
+print ('Total water cover area (m^2) before dam construction', totalwatercoverareabefore); 
+
+
+//6) Calculating the total area covered by all water before the dam's construction
+var totalwatercoverareaafter = (notdataareaafter + notwaterareaafter + seasonalwaterareaafter + permanentwaterareaafter); 
+print ('Total water cover area (m^2) after dam construction', totalwatercoverareaafter); 
+
+
+// 7) Calculate the change in area (m^2) covered by each water class before and after dam construction
+// (water cover change in m^2 = water cover area after dam construction - water cover area before dam construction )
+var diffnotwater = (notwaterareaafter - notwaterareabefore); 
+print ('Change in "no water" cover (m^2) following dam construction', diffnotwater); 
+var diffseasonalwater = (seasonalwaterareaafter - seasonalwaterareabefore); 
+print ('Change in "seasonal water" cover (m^2) following dam construction', diffseasonalwater); 
+var diffpermanentwater = (permanentwaterareaafter - permanentwaterareabefore); 
+print ('Change in "permanent water" cover (m^2) following dam construction', diffpermanentwater); 
+var totalwatercoverchange = (totalwatercoverareaafter - totalwatercoverareabefore); 
+print ('Change in total water cover (m^2) following dam construction', totalwatercoverchange); 
+
+
+
+/////////////////////// GRAPHICALLY VISUALISING WATER  COVER CHANGE /////////////////////////////////
+// AIM - To graphically visualise the change in area of each water class following dam construction//
+// METHOD - 1) Create a table showing the area covered by each water class before and after the // 
+// dam's construction, and the water cover area change in m^2, 2) Create a pie chart showing the % //
+// of the total water cover area each water class covers // 3) Create a histogram showing the //
+// difference in area covered by each water class in m^2, before & after dam construction // 
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////TABLE/////////
+//1) Create a table showing the area covered by each water class before and after the dam's construction,
+// and the water cover area change in m^2, 
+var tabledataabc = {
+  cols: [{id: 'Water Cover Type', label: 'Water Cover Type', type: 'string'},
+         {id: 'Before', label: 'Before Dam Construction Area (m^2)', type: 'number'}, 
+         {id: 'After', label: 'After Dam Construction Area (m^2)', type: 'number'},
+         {id: 'Difference', label: 'Difference in Water Cover Area (Before & After Dam Construction)(m^2)', type: 'number'}],
+  rows: [{c: [{v: 'No Water Cover'}, {v:3915000 }, {v:784800 }, {v:-3130200 }]},
+         {c: [{v: 'Seasonal Water Cover'}, {v:5724063 }, {v: 2464533}, {v:-3259530 }]},
+         {c: [{v: 'Permanent Water Cover'}, {v:20864133 }, {v: 27256842}, {v:6392709 }]}
+         ],
+};
+
+var tableacb = ui.Chart(tabledataabc, 'Table'); 
+print (tableacb); 
+
+///////////PIE CHART/////////
+// 2) Create a pie chart showing the % of the total water cover area each water class covers
+// PIE CHART SHOWING AREA BEFORE DAM CONSTRUCTION : 
+var dataTablebefore = {
+  cols: [{id: 'No water', label: 'No water', type: 'string'},
+         {id: 'Seasonal', label: 'Seasonal', type: 'number'}, 
+         {id: 'Permanent', label: 'Permanent', type: 'number'}],
+  rows: [{c: [{v: 'No Water Cover (m^2)'}, {v: 3915000}]},
+         {c: [{v: 'Seasonal Water Cover (m^2)'}, {v: 5724063}]},
+         {c: [{v: 'Permanent Water Cover (m^2)'}, {v: 20864133}]}],
+};
+
+
+var optionsbefore = {
+  width: 400,
+  height: 240,
+  title: 'Before Dam Construction, Water Cover Area (m^2)',
+  colors: ['#85FF75', '#ec2f4b', '#2822E5']
+};
+
+var chartbefore = new ui.Chart(dataTablebefore, 'PieChart', optionsbefore);
+ 
+print (chartbefore); 
+
+
+//PIE CHART SHOWING AREA AFTER DAM CONSTRUCTION: 
+var dataTableafter = {
+  cols: [{id: 'No water', label: 'No water', type: 'string'},
+         {id: 'Seasonal', label: 'Seasonal', type: 'number'}, 
+         {id: 'Permanent', label: 'Permanent', type: 'number'}],
+  rows: [{c: [{v: 'No Water Cover (m^2)'}, {v: 784800}]},
+         {c: [{v: 'Seasonal Water Cover (m^2)'}, {v: 2464533}]},
+         {c: [{v: 'Permanent Water Cover (m^2)'}, {v: 27256842}]}],
+};
+
+
+var optionsafter = {
+  width: 400,
+  height: 240,
+  title: 'After Dam Construction, Water Cover Area (m^2)',
+  colors: ['#85FF75', '#ec2f4b', '#2822E5']
+};
+
+var chartafter = new ui.Chart(dataTableafter, 'PieChart', optionsafter);
+
+print (chartafter); 
+
+
+
+///////////HISTOGRAM/////////
+// Create a histogram showing the difference in area covered by each water class in m^2, before & after dam construction
+var dataforcolumnchart = {
+  cols: [{id: 'No water', label: 'No water after', type: 'string'},
+         {id: 'Seasonal', label: 'Seasonal after', type: 'number'}, 
+         {id: 'Permanent', label: 'Permanent after', type: 'number'}, 
+         {id: 'No water ', label: 'No water before', type: 'number'}, 
+         {id: 'Seasonal', label: 'Seasonal before', type: 'number'}, 
+         {id: 'Permanent', label: 'Permanent before', type: 'number'}],
+  rows: [{c: [{v: 'No Water Cover Area, Before (m^2)'}, {v: 3915000}]}, 
+         {c: [{v: 'Seasonal Cover Area, Before (m^2)'}, {v: 5724063}]},
+         {c: [{v: 'Permanent Cover Area, Before (m^2)'}, {v: 20864133}]}, 
+         {c: [{v: 'No Water Cover Area, After (m^2)'}, {v: 784800}]},
+         {c: [{v: 'Seasonal Water Cover Area,  After (m^2)'}, {v: 2464533}]},
+         {c: [{v: 'Permanent Water Cover Area, After (m^2)'}, {v: 27256842}]}],
+};
+
+
+var optionsaftertwo = {
+  width: 800,
+  height: 500,
+  legend: 'none', 
+  title: 'Before & After Dam Construction, Water Cover Area (m^2)',
+};
+
+var columnchart = ui.Chart(dataforcolumnchart, 'ColumnChart',optionsaftertwo ); 
+print (columnchart);
+
+
+
+
+
+
+
+
+
+
